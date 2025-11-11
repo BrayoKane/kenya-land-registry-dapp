@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kenya Land Registry DApp (Sepolia)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #020817;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 20px;
+    }
+    h1, h2 {
+      color: #38bdf8;
+      margin-bottom: 0.3rem;
+    }
+    .subtitle {
+      color: #9ca3af;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: #020817;
+      border: 1px solid #1f2937;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 20px rgba(15,23,42,0.5);
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+      color: #9ca3af;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #020817;
+      color: #e5e7eb;
+      box-sizing: border-box;
+    }
+    input::placeholder {
+      color: #6b7280;
+    }
+    button {
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      margin-right: 6px;
+      margin-top: 4px;
+      background: #38bdf8;
+      color: #020817;
+    }
+    button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .status {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      margin-top: 6px;
+    }
+    .output {
+      font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      background: #020817;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 8px;
+      border: 1px solid #111827;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 9px;
+      font-size: 0.7rem;
+      border-radius: 999px;
+      background: #111827;
+      color: #9ca3af;
+      border: 1px solid #1f2937;
+      margin-left: 6px;
+    }
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Kenya Land Registry DApp</h1>
+  <div class="subtitle">
+    Connected to <strong>Sepolia</strong> • Contract: <code>0xB875e8004eb3B757a0Fd3610B49085a1f1260aD9</code>
+  </div>
+
+  <div class="card">
+    <h2>1. Connect Wallet</h2>
+    <button id="connectButton">Connect MetaMask</button>
+    <span class="badge" id="networkLabel">Not connected</span>
+    <div class="status" id="accountInfo"></div>
+    <div class="status" id="connStatus"></div>
+    <a href="https://sepolia.etherscan.io/address/0xB875e8004eb3B757a0Fd3610B49085a1f1260aD9" target="_blank">
+      View contract on Etherscan
+    </a>
+  </div>
+
+  <div class="card">
+    <h2>2. Register Parcel <span class="badge">Registrar Only</span></h2>
+    <label>Owner Address</label>
+    <input id="regOwner" placeholder="0x..." />
+    <label>LR Number</label>
+    <input id="regLR" placeholder="e.g. LR 209/12345" />
+    <label>County</label>
+    <input id="regCounty" placeholder="e.g. Nairobi" />
+    <label>Coordinates / Survey Hash (IPFS / geoJSON hash)</label>
+    <input id="regCoords" placeholder="Qm..." />
+    <label>Owner ID Hash (Hashed ID/KRA PIN)</label>
+    <input id="regOwnerIdHash" placeholder="hash of verified identity" />
+    <button id="registerBtn">Register Parcel</button>
+    <div class="status" id="registerStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. View Parcel Details</h2>
+    <label>Token ID</label>
+    <input id="viewTokenId" type="number" min="1" placeholder="Enter tokenId" />
+    <button id="viewBtn" class="secondary">Fetch Parcel</button>
+    <div class="output" id="viewOutput"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. Transfer Parcel</h2>
+    <label>Token ID</label>
+    <input id="transferTokenId" type="number" min="1" placeholder="Enter tokenId" />
+    <label>New Owner Address</label>
+    <input id="transferTo" placeholder="0x..." />
+    <button id="transferBtn">Transfer Parcel</button>
+    <div class="status" id="transferStatus"></div>
+  </div>
+
+  <script>
+    console.log("DApp script loaded");
+
+    const CONTRACT_ADDRESS = "0xB875e8004eb3B757a0Fd3610B49085a1f1260aD9";
+
+    const CONTRACT_ABI = [
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "string",
+                    "name": "docHash",
+                    "type": "string"
+                }
+            ],
+            "name": "addParcelDocument",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "address",
+                    "name": "account",
+                    "type": "address"
+                }
+            ],
+            "name": "addRegistrar",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "address",
+                    "name": "ministryAdmin",
+                    "type": "address"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "constructor"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "string",
+                    "name": "docHash",
+                    "type": "string"
+                }
+            ],
+            "name": "ParcelDocumentAdded",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "string",
+                    "name": "lrNumber",
+                    "type": "string"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "string",
+                    "name": "county",
+                    "type": "string"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "owner",
+                    "type": "address"
+                }
+            ],
+            "name": "ParcelRegistered",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "enum LandRegistryNFT.ParcelStatus",
+                    "name": "newStatus",
+                    "type": "uint8"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "string",
+                    "name": "reason",
+                    "type": "string"
+                }
+            ],
+            "name": "ParcelStatusChanged",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "from",
+                    "type": "address"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "to",
+                    "type": "address"
+                }
+            ],
+            "name": "ParcelTransferred",
+            "type": "event"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "address",
+                    "name": "owner",
+                    "type": "address"
+                },
+                {
+                    "internalType": "string",
+                    "name": "lrNumber",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "county",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "coordinatesHash",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "ownerIdHash",
+                    "type": "string"
+                }
+            ],
+            "name": "registerParcel",
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "address",
+                    "name": "account",
+                    "type": "address"
+                }
+            ],
+            "name": "removeRegistrar",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "bytes32",
+                    "name": "role",
+                    "type": "bytes32"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "account",
+                    "type": "address"
+                }
+            ],
+            "name": "RoleGranted",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "bytes32",
+                    "name": "role",
+                    "type": "bytes32"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "account",
+                    "type": "address"
+                }
+            ],
+            "name": "RoleRevoked",
+            "type": "event"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "address",
+                    "name": "to",
+                    "type": "address"
+                }
+            ],
+            "name": "safeTransferParcel",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "enum LandRegistryNFT.ParcelStatus",
+                    "name": "newStatus",
+                    "type": "uint8"
+                },
+                {
+                    "internalType": "string",
+                    "name": "reason",
+                    "type": "string"
+                }
+            ],
+            "name": "setParcelStatus",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "from",
+                    "type": "address"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "to",
+                    "type": "address"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                }
+            ],
+            "name": "Transfer",
+            "type": "event"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "string",
+                    "name": "newCoordinatesHash",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "newOwnerIdHash",
+                    "type": "string"
+                }
+            ],
+            "name": "updateParcelMetadata",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "address",
+                    "name": "owner",
+                    "type": "address"
+                }
+            ],
+            "name": "balanceOf",
+            "outputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "DEFAULT_ADMIN_ROLE",
+            "outputs": [
+                {
+                    "internalType": "bytes32",
+                    "name": "",
+                    "type": "bytes32"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                }
+            ],
+            "name": "getParcel",
+            "outputs": [
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                },
+                {
+                    "internalType": "enum LandRegistryNFT.ParcelStatus",
+                    "name": "",
+                    "type": "uint8"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "address",
+                    "name": "",
+                    "type": "address"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                }
+            ],
+            "name": "getParcelDocuments",
+            "outputs": [
+                {
+                    "internalType": "string[]",
+                    "name": "",
+                    "type": "string[]"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "bytes32",
+                    "name": "role",
+                    "type": "bytes32"
+                },
+                {
+                    "internalType": "address",
+                    "name": "account",
+                    "type": "address"
+                }
+            ],
+            "name": "hasRole",
+            "outputs": [
+                {
+                    "internalType": "bool",
+                    "name": "",
+                    "type": "bool"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "name",
+            "outputs": [
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "tokenId",
+                    "type": "uint256"
+                }
+            ],
+            "name": "ownerOf",
+            "outputs": [
+                {
+                    "internalType": "address",
+                    "name": "",
+                    "type": "address"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "name": "parcelDocuments",
+            "outputs": [
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {
+                    "internalType": "uint256",
+                    "name": "",
+                    "type": "uint256"
+                }
+            ],
+            "name": "parcels",
+            "outputs": [
+                {
+                    "internalType": "string",
+                    "name": "lrNumber",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "county",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "coordinatesHash",
+                    "type": "string"
+                },
+                {
+                    "internalType": "string",
+                    "name": "ownerIdHash",
+                    "type": "string"
+                },
+                {
+                    "internalType": "enum LandRegistryNFT.ParcelStatus",
+                    "name": "status",
+                    "type": "uint8"
+                },
+                {
+                    "internalType": "uint256",
+                    "name": "registeredAt",
+                    "type": "uint256"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "REGISTRAR_ROLE",
+            "outputs": [
+                {
+                    "internalType": "bytes32",
+                    "name": "",
+                    "type": "bytes32"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "symbol",
+            "outputs": [
+                {
+                    "internalType": "string",
+                    "name": "",
+                    "type": "string"
+                }
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        }
+    ];
+
+    let provider, signer, contract;
+
+    const connectButton = document.getElementById("connectButton");
+    const accountInfo = document.getElementById("accountInfo");
+    const connStatus = document.getElementById("connStatus");
+    const networkLabel = document.getElementById("networkLabel");
+    const registerBtn = document.getElementById("registerBtn");
+    const registerStatus = document.getElementById("registerStatus");
+    const viewBtn = document.getElementById("viewBtn");
+    const viewOutput = document.getElementById("viewOutput");
+    const transferBtn = document.getElementById("transferBtn");
+    const transferStatus = document.getElementById("transferStatus");
+
+    async function init() {
+      console.log("Init called");
+      if (typeof window.ethereum === "undefined") {
+        connStatus.textContent = "MetaMask not detected. Install MetaMask or enable it on this page.";
+        connectButton.disabled = true;
+        console.warn("MetaMask / window.ethereum not found");
+        return;
+      }
+
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      console.log("Provider created", provider);
+
+      connectButton.addEventListener("click", () => {
+        console.log("Connect button clicked");
+        connectWallet();
+      });
+
+      window.ethereum.on("accountsChanged", (accounts) => {
+        console.log("Accounts changed", accounts);
+        if (accounts.length === 0) {
+          accountInfo.textContent = "Disconnected";
+        } else {
+          accountInfo.textContent = "Connected: " + shorten(accounts[0]);
+        }
+      });
+
+      window.ethereum.on("chainChanged", (chainId) => {
+        console.log("Chain changed", chainId);
+        window.location.reload();
+      });
+    }
+
+    async function connectWallet() {
+      try {
+        console.log("Requesting accounts...");
+          const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+          console.log("Accounts:", accounts);
+
+        signer = provider.getSigner();
+        const network = await provider.getNetwork();
+        console.log("Network:", network);
+
+        if (network.chainId !== 11155111) {
+          networkLabel.textContent = "Wrong network (ChainId " + network.chainId + ")";
+          connStatus.textContent = "Switch MetaMask to Sepolia (11155111).";
+          contract = null;
+          return;
+        }
+
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+        console.log("Contract instance created", contract);
+
+        accountInfo.textContent = "Connected: " + shorten(accounts[0]);
+        networkLabel.textContent = "Sepolia (11155111)";
+        connStatus.textContent = "Wallet connected. Ready to interact with contract.";
+      } catch (err) {
+        console.error("Error in connectWallet", err);
+        connStatus.textContent = "Connection rejected or failed: " + (err.message || err);
+      }
+    }
+
+    registerBtn.addEventListener("click", async () => {
+      if (!contract) {
+        alert("Connect wallet on Sepolia first.");
+        return;
+      }
+
+      const owner = document.getElementById("regOwner").value.trim();
+      const lr = document.getElementById("regLR").value.trim();
+      const county = document.getElementById("regCounty").value.trim();
+      const coords = document.getElementById("regCoords").value.trim();
+      const ownerIdHash = document.getElementById("regOwnerIdHash").value.trim();
+
+      if (!owner || !lr || !county) {
+        registerStatus.textContent = "Owner, LR number & County are required.";
+        return;
+      }
+
+      try {
+        registerStatus.textContent = "Sending transaction...";
+        const tx = await contract.registerParcel(owner, lr, county, coords, ownerIdHash);
+        console.log("registerParcel tx:", tx);
+        await tx.wait();
+        registerStatus.textContent = "Parcel registered. Tx: " + tx.hash;
+      } catch (err) {
+        console.error("Error in registerParcel", err);
+        registerStatus.textContent = "Error: " + (err.data?.message || err.message || err);
+      }
+    });
+
+    viewBtn.addEventListener("click", async () => {
+      if (!contract) {
+        alert("Connect wallet on Sepolia first.");
+        return;
+      }
+
+      const tokenId = document.getElementById("viewTokenId").value;
+      if (!tokenId) {
+        viewOutput.textContent = "Enter a tokenId.";
+        return;
+      }
+
+      try {
+        const parcel = await contract.getParcel(tokenId);
+        const docs = await contract.getParcelDocuments(tokenId);
+
+        const lrNumber = parcel[0];
+        const county = parcel[1];
+        const coordinatesHash = parcel[2];
+        const statusCode = parcel[3];
+        const registeredAt = parcel[4];
+        const currentOwner = parcel[5];
+
+        const statusLabel = ["Active","Disputed","Frozen","Revoked"][statusCode] || statusCode;
+        const date = new Date(registeredAt.toNumber() * 1000).toLocaleString();
+
+        viewOutput.textContent =
+          "Token ID: " + tokenId + "\n" +
+          "LR Number: " + lrNumber + "\n" +
+          "County: " + county + "\n" +
+          "Coordinates Hash: " + coordinatesHash + "\n" +
+          "Status: " + statusLabel + "\n" +
+          "Registered At: " + date + "\n" +
+          "Current Owner: " + currentOwner + "\n" +
+          "Documents:\n" +
+          ((docs && docs.length)
+            ? docs.map((d, i) => "  [" + i + "] " + d).join("\n")
+            : "  None");
+      } catch (err) {
+        console.error("Error in view parcel", err);
+        viewOutput.textContent = "Error fetching parcel: " + (err.data?.message || err.message || err);
+      }
+    });
+
+    transferBtn.addEventListener("click", async () => {
+      if (!contract) {
+        alert("Connect wallet on Sepolia first.");
+        return;
+      }
+
+      const tokenId = document.getElementById("transferTokenId").value;
+      const to = document.getElementById("transferTo").value.trim();
+
+      if (!tokenId || !to) {
+        transferStatus.textContent = "Token ID & new owner address required.";
+        return;
+      }
+
+      try {
+        transferStatus.textContent = "Sending transfer transaction...";
+        const tx = await contract.safeTransferParcel(tokenId, to);
+        console.log("safeTransferParcel tx:", tx);
+        await tx.wait();
+        transferStatus.textContent = "Parcel transferred. Tx: " + tx.hash;
+      } catch (err) {
+        console.error("Error in transfer", err);
+        transferStatus.textContent = "Error: " + (err.data?.message || err.message || err);
+      }
+    });
+
+    function shorten(addr) {
+      return addr.slice(0, 6) + "..." + addr.slice(-4);
+    }
+
+    window.addEventListener("load", init);
+  </script>
+</body>
+</html>
